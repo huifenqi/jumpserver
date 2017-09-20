@@ -27,7 +27,7 @@ class IDC(models.Model):
     intranet = models.TextField(blank=True, verbose_name=_('Intranet'))
     extranet = models.TextField(blank=True, verbose_name=_('Extranet'))
     date_created = models.DateTimeField(
-        auto_now_add=True, null=True, verbose_name=_('Date added'))
+        auto_now_add=True, null=True, verbose_name=_('Date created'))
     operator = models.CharField(
         max_length=32, blank=True, verbose_name=_('Operator'))
     created_by = models.CharField(
@@ -36,6 +36,7 @@ class IDC(models.Model):
 
     def __unicode__(self):
         return self.name
+    __str__ = __unicode__
 
     @classmethod
     def initial(cls):

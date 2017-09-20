@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 {% load static %}
 {% load i18n %}
-{% load bootstrap %}
+{% load bootstrap3 %}
 
 
 {% block custom_head_css_js %}
@@ -44,10 +44,12 @@
                     {% if wizard.form.forms %}
                         {{ wizard.form.management_form }}
                         {% for form in wizard.form.forms %}
-                            {{ form|bootstrap }}
+                            {% bootstrap_form form %}
+{#                            {{ form|bootstrap }}#}
                         {% endfor %}
                     {% else %}
-                        {{ wizard.form|bootstrap }}
+{#                        {{ wizard.form|bootstrap }}#}
+                        {% bootstrap_form wizard.form %}
                     {% endif %}
                   </form>
                 </div>

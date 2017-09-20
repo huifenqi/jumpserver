@@ -7,6 +7,7 @@ import json
 
 from django.db import models
 from django.utils.translation import ugettext_lazy as _
+from assets.models import Asset
 
 __all__ = ["Task"]
 
@@ -22,7 +23,7 @@ class Task(models.Model):
     timedelta = models.FloatField(default=0.0, verbose_name=_('Time'), null=True)
     is_finished = models.BooleanField(default=False, verbose_name=_('Is finished'))
     is_success = models.BooleanField(default=False, verbose_name=_('Is success'))
-    assets = models.TextField(blank=True, null=True, verbose_name=_('Assets for id'))  # Asset inventory may be change
+    assets = models.TextField(blank=True, null=True, verbose_name=_('Assets id'))  # Asset inventory may be change
     _modules_args = models.TextField(blank=True, null=True, verbose_name=_('Task module and args json format'))
     pattern = models.CharField(max_length=64, default='all', verbose_name=_('Task run pattern'))
     result = models.TextField(blank=True, null=True, verbose_name=_('Task raw result'))
@@ -33,14 +34,16 @@ class Task(models.Model):
 
     @property
     def total_assets(self):
-        return self.assets.split(',')
+        assets_id = [i for i in self.assets.split(',') if i.isdigit()]
+        assets = Asset.objects.filter(id__in=assets_id)
+        return assets
 
     @property
     def assets_json(self):
         from assets.models import Asset
-        return [Asset.objects.get(id=int(id_))._to_secret_json()
-                for id_ in self.total_assets
-                if Asset.objects.filter(id=int(id_))]
+        return [Asset.objects.get(id=int(asset.pk))._to_secret_json()
+                for asset in self.total_assets
+                if Asset.objects.filter(id=int(asset.pk))]
 
     @property
     def module_args(self):

@@ -85,11 +85,11 @@
                                             <td><b>{{ asset.idc.name }}</b></td>
                                         </tr>
                                         <tr>
-                                            <td>{% trans 'Cabinet no' %}:</td>
+                                            <td>{% trans 'Cabinet number' %}:</td>
                                             <td><b>{{ asset.cabinet_no }}</b></td>
                                         </tr>
                                         <tr>
-                                            <td>{% trans 'Cabinet pos' %}:</td>
+                                            <td>{% trans 'Cabinet position' %}:</td>
                                             <td><b>{{ asset.cabinet_pos }}</b></td>
                                         </tr>
                                         <tr>
@@ -185,10 +185,10 @@
                                             </span></td>
                                         </tr>
                                         <tr>
-                                            <td>{% trans 'Rrefresh hardware' %}:</td>
+                                            <td>{% trans 'Refresh hardware' %}:</td>
                                             <td>
                                                 <span class="pull-right">
-                                                    <button type="button" class="btn btn-primary btn-xs btn-refresh-asset" style="width: 54px">{% trans 'Refresh' %}</button>
+                                                    <button type="button" class="btn btn-primary btn-xs" id="btn_refresh_asset" style="width: 54px">{% trans 'Refresh' %}</button>
                                                 </span>
                                             </td>
                                         </tr>
@@ -196,19 +196,10 @@
                                             <td>{% trans 'Test admin user' %}:</td>
                                             <td>
                                                 <span class="pull-right">
-                                                    <button type="button" class="btn btn-primary btn-xs" id="btn_reset_pk" style="width: 54px;">{% trans 'Test' %}</button>
+                                                    <button type="button" class="btn btn-primary btn-xs" id="btn_test_admin_user" style="width: 54px;">{% trans 'Test' %}</button>
                                                 </span>
                                             </td>
                                         </tr>
-                                        <tr>
-                                            <td>{% trans 'Test system pingpong' %}:</td>
-                                            <td>
-                                                <span class="pull-right">
-                                                    <button type="button" class="btn btn-primary btn-xs" id="btn_reset_pk" style="width: 54px;">{% trans 'Test' %}</button>
-                                                </span>
-                                            </td>
-                                        </tr>
-
                                         </tbody>
                                     </table>
                                 </div>
@@ -233,7 +224,7 @@
                                             </tr>
                                             <tr>
                                                 <td colspan="2" class="no-borders">
-                                                    <button type="button" class="btn btn-info btn-sm" id="btn_add_user_group">{% trans 'Join' %}</button>
+                                                    <button type="button" class="btn btn-info btn-sm" id="btn_add_user_group">{% trans 'Confirm' %}</button>
                                                 </td>
                                             </tr>
                                         </form>
@@ -260,7 +251,7 @@
                                         <form>
                                             <tr class="no-borders-tr">
                                                 <td colspan="2">
-                                                    <select data-placeholder="{% trans 'Select system user' %}" class="select2" style="width: 100%" multiple="" tabindex="4">
+                                                    <select data-placeholder="{% trans 'Select system users' %}" class="select2" style="width: 100%" multiple="" tabindex="4">
                                                         {% for system_user in system_users_remain %}
                                                             <option value="{{ system_user.id }}" id="opt_{{ system_user.id }}">{{ system_user.name }}</option>
                                                         {% endfor %}
@@ -269,7 +260,7 @@
                                             </tr>
                                             <tr class="no-borders-tr">
                                                 <td colspan="2">
-                                                    <button type="button" class="btn btn-warning btn-sm btn-system-user">{% trans 'Associate' %}</button>
+                                                    <button type="button" class="btn btn-warning btn-sm btn-system-user">{% trans 'Confirm' %}</button>
                                                 </td>
                                             </tr>
                                         </form>
@@ -380,7 +371,7 @@ $(document).ready(function () {
     var body = {
         'is_active': checked
     };
-    var success = '{% trans "Update Successfully!" %}';
+    var success = '{% trans "Update successfully!" %}';
     var status = $(".ibox-content > table > tbody > tr:nth-child(13) > td:last >b").text();
     APIUpdateAttr({
         url: the_url,
@@ -453,8 +444,17 @@ $(document).ready(function () {
     var the_url = '{% url "api-assets:asset-detail" pk=99991937 %}'.replace('99991937', uid);
     var redirect_url = "{% url 'assets:asset-list' %}";
     objectDelete($this, name, the_url, redirect_url);
-}).on('click', '.btn-refresh-asset', function () {
+}).on('click', '#btn_refresh_asset', function () {
+    alert('请等待几秒, 等待完成');
     refreshAssetHardware()
+}).on('click', '#btn_test_admin_user', function () {
+    $.ajax({
+        url: '{% url "api-assets:asset-admin-user-test" pk=asset.id %}'
+    }).done(function (data, textStatue, jqXHR) {
+        toastr.success('Success')
+    }).fail(function (data, textStaue, errorThrown) {
+        toastr.error('Error')
+    })
 })
 
 

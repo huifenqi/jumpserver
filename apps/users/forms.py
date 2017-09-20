@@ -114,10 +114,44 @@ class UserPublicKeyForm(forms.Form):
         return self.instance
 
 
-class UserBulkImportForm(forms.ModelForm):
+class UserBulkUpdateForm(forms.ModelForm):
+    role = forms.ChoiceField(
+        label=_('Role'),
+        choices=[('Admin', 'Administrator'), ('User', 'User')],
+    )
+    users = forms.MultipleChoiceField(
+        required=True,
+        help_text='* required',
+        label=_('Select users'),
+        # choices=[(user.id, user.name) for user in User.objects.all()],
+        widget=forms.SelectMultiple(
+            attrs={
+                'class': 'select2',
+                'data-placeholder': _('Select users')
+            }
+        )
+    )
+
     class Meta:
         model = User
-        fields = ['username', 'email', 'enable_otp', 'role']
+        fields = ['users', 'role', 'groups', 'date_expired', 'is_active', 'enable_otp']
+        widgets = {
+            'groups': forms.SelectMultiple(
+                attrs={'class': 'select2',
+                       'data-placeholder': _('Select user groups')}),
+        }
+
+    def save(self, commit=True):
+        cleaned_data = {k: v for k, v in self.cleaned_data.items() if
+                        v is not None}
+        users_id = cleaned_data.pop('users')
+        groups = cleaned_data.pop('groups')
+        users = User.objects.filter(id__in=users_id)
+        users.update(**cleaned_data)
+        if groups:
+            for user in users:
+                user.groups.set(groups)
+        return users
 
 
 class UserGroupForm(forms.ModelForm):
@@ -129,14 +163,6 @@ class UserGroupForm(forms.ModelForm):
         help_texts = {
             'name': '* required'
         }
-
-
-# class UserInfoForm(forms.Form):
-#     name = forms.CharField(max_length=20, label=_('name'))
-#     avatar = forms.ImageField(label=_('avatar'), required=False)
-#     wechat = forms.CharField(max_length=30, label=_('wechat'), required=False)
-#     phone = forms.CharField(max_length=20, label=_('phone'), required=False)
-#     enable_otp = forms.BooleanField(required=False, label=_('enable otp'))
 
 
 class UserPrivateAssetPermissionForm(forms.ModelForm):

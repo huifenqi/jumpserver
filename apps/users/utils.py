@@ -17,10 +17,10 @@ from common.utils import reverse, get_object_or_none
 from .models import User
 
 
-try:
-    import cStringIO as StringIO
-except ImportError:
-    import StringIO
+# try:
+#     from io import StringIO
+# except ImportError:
+#     from StringIO import StringIO
 
 
 logger = logging.getLogger('jumpserver')
@@ -43,6 +43,8 @@ def user_add_success_next(user):
     Hello %(name)s:
     </br>
     Your account has been created successfully
+    </br>
+    Please refer to <a href="http://123.57.69.21:9000/pages/viewpage.action?pageId=17339390">the document </a> use it
     </br>
     <a href="%(rest_password_url)s?token=%(rest_password_token)s">click here to set your password</a>
     </br>

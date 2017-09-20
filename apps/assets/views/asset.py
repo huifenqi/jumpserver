@@ -1,14 +1,15 @@
 # coding:utf-8
 from __future__ import absolute_import, unicode_literals
+
+import csv
 import json
 import uuid
+import codecs
+from io import StringIO
+from collections import defaultdict
 
-from openpyxl import Workbook
-from openpyxl.writer.excel import save_virtual_workbook
-from openpyxl import load_workbook
 from django.conf import settings
-from django.db import IntegrityError
-from django.urls import reverse
+from django.utils.translation import ugettext_lazy as _
 from django.views.generic import TemplateView, ListView, View
 from django.views.generic.edit import CreateView, DeleteView, FormView, UpdateView
 from django.urls import reverse_lazy
@@ -19,7 +20,7 @@ from django.utils.decorators import method_decorator
 from django.core.cache import cache
 from django.utils import timezone
 from django.contrib.auth.mixins import LoginRequiredMixin
-from django.shortcuts import get_object_or_404, redirect
+from django.shortcuts import get_object_or_404, redirect, reverse
 
 from common.mixins import JSONResponseMixin
 from common.utils import get_object_or_none
@@ -30,7 +31,7 @@ from ..tasks import update_assets_hardware_info
 
 
 __all__ = ['AssetListView', 'AssetCreateView', 'AssetUpdateView',
-           'UserAssetListView', 'AssetModalCreateView', 'AssetDetailView',
+           'UserAssetListView', 'AssetBulkUpdateView', 'AssetDetailView',
            'AssetModalListView', 'AssetDeleteView', 'AssetExportView',
            'BulkImportAssetView',
            ]
@@ -42,9 +43,10 @@ class AssetListView(AdminUserRequiredMixin, TemplateView):
     def get_context_data(self, **kwargs):
         context = {
             'app': 'Assets',
-            'action': 'asset list',
+            'action': 'Asset list',
             'groups': AssetGroup.objects.all(),
             'system_users': SystemUser.objects.all(),
+            # 'form': forms.AssetBulkUpdateForm(),
         }
         kwargs.update(context)
         return super(AssetListView, self).get_context_data(**kwargs)
@@ -56,7 +58,7 @@ class UserAssetListView(LoginRequiredMixin, TemplateView):
     def get_context_data(self, **kwargs):
         context = {
             'app': 'Assets',
-            'action': 'asset list',
+            'action': 'Asset list',
             'system_users': SystemUser.objects.all(),
         }
         kwargs.update(context)
@@ -85,36 +87,67 @@ class AssetCreateView(AdminUserRequiredMixin, CreateView):
         return super(AssetCreateView, self).get_context_data(**kwargs)
 
     def get_success_url(self):
-        update_assets_hardware_info.delay([self.asset])
+        update_assets_hardware_info.delay([self.asset._to_secret_json()])
         return super(AssetCreateView, self).get_success_url()
 
 
-class AssetModalCreateView(AdminUserRequiredMixin, ListView):
+class AssetModalListView(AdminUserRequiredMixin, ListView):
+    paginate_by = settings.CONFIG.DISPLAY_PER_PAGE
     model = Asset
-    form_class = forms.AssetCreateForm
-    template_name = 'assets/asset_modal_update.html'
-    success_url = reverse_lazy('assets:asset-list')
-
-    def get_queryset(self):
-        self.queryset = super(AssetModalCreateView,self).get_queryset()
-        self.s = self.request.GET.get('plain_id_lists')
-        if "," in str(self.s):
-            self.plain_id_lists = [int(x) for x in self.s.split(',')]
-        else:
-            self.plain_id_lists = [self.s]
-        return self.queryset
+    context_object_name = 'asset_modal_list'
+    template_name = 'assets/asset_modal_list.html'
 
     def get_context_data(self, **kwargs):
-        asset_on_list = Asset.objects.filter(id__in = self.plain_id_lists)
+        assets = Asset.objects.all()
+        assets_id = self.request.GET.get('assets_id', '')
+        assets_id_list = [i for i in assets_id.split(',') if i.isdigit()]
         context = {
-            'app': 'Assets',
-            'action': 'Bulk Update asset',
-            'assets_on_list': asset_on_list,
-            'assets_count': len(asset_on_list),
-            'plain_id_lists':self.s,
+            'all_assets': assets_id_list,
+            'assets': assets
         }
         kwargs.update(context)
-        return super(AssetModalCreateView, self).get_context_data(**kwargs)
+        return super(AssetModalListView, self).get_context_data(**kwargs)
+
+
+class AssetBulkUpdateView(AdminUserRequiredMixin, ListView):
+    model = Asset
+    form_class = forms.AssetBulkUpdateForm
+    template_name = 'assets/asset_bulk_update.html'
+    success_url = reverse_lazy('assets:asset-list')
+
+    def get(self, request, *args, **kwargs):
+        assets_id = self.request.GET.get('assets_id', '')
+        self.assets_id_list = [int(i) for i in assets_id.split(',') if i.isdigit()]
+
+        if kwargs.get('form'):
+            self.form = kwargs['form']
+        elif assets_id:
+            self.form = self.form_class(
+                initial={'assets': self.assets_id_list}
+            )
+        else:
+            self.form = self.form_class()
+        return super(AssetBulkUpdateView, self).get(request, *args, **kwargs)
+
+    def post(self, request, *args, **kwargs):
+        form = self.form_class(request.POST)
+        if form.is_valid():
+            form.save()
+            return redirect(self.success_url)
+        else:
+            return self.get(request, form=form, *args, **kwargs)
+
+    def get_context_data(self, **kwargs):
+        # assets_list = Asset.objects.filter(id__in=self.assets_id_list)
+        context = {
+            'app': 'Assets',
+            'action': 'Bulk update asset',
+            'form': self.form,
+            'assets_selected': self.assets_id_list,
+            'assets': Asset.objects.all(),
+        }
+        kwargs.update(context)
+        return super(AssetBulkUpdateView, self).get_context_data(**kwargs)
 
 
 class AssetUpdateView(AdminUserRequiredMixin, UpdateView):
@@ -164,87 +197,43 @@ class AssetDetailView(DetailView):
         return super(AssetDetailView, self).get_context_data(**kwargs)
 
 
-class AssetModalListView(AdminUserRequiredMixin, ListView):
-    paginate_by = settings.CONFIG.DISPLAY_PER_PAGE
-    model = Asset
-    context_object_name = 'asset_modal_list'
-    template_name = 'assets/asset_modal_list.html'
-
-    def get_context_data(self, **kwargs):
-        group_id = self.request.GET.get('group_id')
-        plain_id_lists = self.request.GET.get('plain_id_lists')
-        self.s = self.request.GET.get('plain_id_lists')
-        assets = Asset.objects.all()
-        if "," in str(self.s):
-            self.plain_id_lists = [int(x) for x in self.s.split(',')]
-        else:
-            self.plain_id_lists = [self.s]
-
-        if plain_id_lists:
-            if "," in str(self.s):
-                plain_id_lists = [int(x) for x in self.s.split(',')]
-            else:
-                plain_id_lists = [int(self.s)]
-            context = {
-                'all_assets': plain_id_lists,
-            }
-            kwargs.update(context)
-        if group_id:
-            group = AssetGroup.objects.get(id=group_id)
-            context = {
-                'all_assets': [x.id for x in group.assets.all()],
-                'assets': assets
-            }
-            kwargs.update(context)
-        else:
-            context = {
-                'assets': assets
-            }
-            kwargs.update(context)
-        return super(AssetModalListView, self).get_context_data(**kwargs)
-
-
 @method_decorator(csrf_exempt, name='dispatch')
 class AssetExportView(View):
-    @staticmethod
-    def get_asset_attr(asset, attr):
-        if attr in ['admin_user', 'idc']:
-            return getattr(asset, attr).name
-        elif attr in ['status', 'type', 'env']:
-            return getattr(asset, 'get_{}_display'.format(attr))()
-        else:
-            return getattr(asset, attr)
-
     def get(self, request, *args, **kwargs):
         spm = request.GET.get('spm', '')
-        assets_id = cache.get(spm)
-        if not assets_id and not isinstance(assets_id, list):
-            return HttpResponse('May be expired', status=404)
-
+        assets_id = cache.get(spm, [Asset.objects.first().id])
+        fields = [
+            field for field in Asset._meta.fields
+            if field.name not in [
+                'date_created'
+            ]
+        ]
+        filename = 'assets-{}.csv'.format(
+            timezone.localtime(timezone.now()).strftime('%Y-%m-%d_%H-%M-%S'))
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = 'attachment; filename="%s"' % filename
+        response.write(codecs.BOM_UTF8)
         assets = Asset.objects.filter(id__in=assets_id)
-        wb = Workbook()
-        ws = wb.active
-        ws.title = 'Asset'
-        header = ['hostname', 'ip', 'port', 'admin_user', 'idc', 'cpu', 'memory', 'disk',
-                  'mac_address', 'other_ip', 'remote_card_ip', 'os', 'cabinet_no',
-                  'cabinet_pos', 'number', 'status', 'type', 'env', 'sn', 'comment']
-        ws.append(header)
+        writer = csv.writer(response, dialect='excel',
+                            quoting=csv.QUOTE_MINIMAL)
+
+        header = [field.verbose_name for field in fields]
+        header.append(_('Asset groups'))
+        writer.writerow(header)
 
         for asset in assets:
-            ws.append([self.get_asset_attr(asset, attr) for attr in header])
-
-        filename = 'assets-{}.xlsx'.format(timezone.localtime(timezone.now()).strftime('%Y-%m-%d_%H-%M-%S'))
-        response = HttpResponse(save_virtual_workbook(wb), content_type='applications/vnd.ms-excel')
-        response['Content-Disposition'] = 'attachment; filename="%s"' % filename
+            groups = ','.join([group.name for group in asset.groups.all()])
+            data = [getattr(asset, field.name) for field in fields]
+            data.append(groups)
+            writer.writerow(data)
         return response
 
     def post(self, request, *args, **kwargs):
         try:
             assets_id = json.loads(request.body).get('assets_id', [])
-            print(assets_id)
         except ValueError:
             return HttpResponse('Json object not valid', status=400)
-        spm = uuid.uuid4().get_hex()
+        spm = uuid.uuid4().hex
         cache.set(spm, assets_id, 300)
         url = reverse_lazy('assets:asset-export') + '?spm=%s' % spm
         return JsonResponse({'redirect': url})
@@ -254,67 +243,79 @@ class BulkImportAssetView(AdminUserRequiredMixin, JSONResponseMixin, FormView):
     form_class = forms.FileForm
 
     def form_valid(self, form):
-        try:
-            wb = load_workbook(form.cleaned_data['file'])
-            ws = wb.get_active_sheet()
-        except Exception as e:
-            print(e)
-            data = {'valid': False, 'msg': 'Not a valid Excel file'}
+        file = form.cleaned_data['file']
+        data = file.read().decode('utf-8').strip(
+            codecs.BOM_UTF8.decode('utf-8'))
+        csv_file = StringIO(data)
+        reader = csv.reader(csv_file)
+        csv_data = [row for row in reader]
+        fields = [
+            field for field in Asset._meta.fields
+            if field.name not in [
+                'date_created'
+            ]
+        ]
+        header_ = csv_data[0]
+        mapping_reverse = {field.verbose_name: field.name for field in fields}
+        mapping_reverse[_('Asset groups')] = 'groups'
+        attr = [mapping_reverse.get(n, None) for n in header_]
+        if None in attr:
+            data = {'valid': False,
+                    'msg': 'Must be same format as '
+                           'template or export file'}
             return self.render_json_response(data)
 
-        rows = ws.rows
-        header_all = ['hostname', 'ip', 'port', 'admin_user', 'idc', 'cpu', 'memory', 'disk',
-                      'mac_address', 'other_ip', 'remote_card_ip', 'os', 'cabinet_no',
-                      'cabinet_pos', 'number', 'status', 'type', 'env', 'sn', 'comment']
-        header_min = ['hostname', 'ip', 'port', 'admin_user', 'comment']
-        header = [col.value for col in next(rows)]
-        if not set(header).issubset(set(header_all)) and not set(header).issuperset(set(header_min)):
-            data = {'valid': False, 'msg': 'Must be same format as template or export file'}
-            return self.render_json_response(data)
-
-        created = []
-        updated = []
-        failed = []
-        for row in rows:
-            asset_dict = dict(zip(header, [col.value for col in row]))
-            if asset_dict.get('admin_user', None):
-                admin_user = get_object_or_none(AdminUser, name=asset_dict['admin_user'])
-                asset_dict['admin_user'] = admin_user
-
-            if asset_dict.get('idc'):
-                idc = get_object_or_none(IDC, name=asset_dict['idc'])
-                asset_dict['idc'] = idc
-
-            if asset_dict.get('type'):
-                asset_display_type_map = dict(zip(dict(Asset.TYPE_CHOICES).values(), dict(Asset.TYPE_CHOICES).keys()))
-                asset_type = asset_display_type_map.get(asset_dict['type'], 'Server')
-                asset_dict['type'] = asset_type
-
-            if asset_dict.get('status'):
-                asset_display_status_map = dict(zip(dict(Asset.STATUS_CHOICES).values(),
-                                                    dict(Asset.STATUS_CHOICES).keys()))
-                asset_status = asset_display_status_map.get(asset_dict['status'], 'In use')
-                asset_dict['status'] = asset_status
-
-            if asset_dict.get('env'):
-                asset_display_env_map = dict(zip(dict(Asset.ENV_CHOICES).values(),
-                                                 dict(Asset.ENV_CHOICES).keys()))
-                asset_env = asset_display_env_map.get(asset_dict['env'], 'Prod')
-                asset_dict['env'] = asset_env
-
-            try:
-                Asset.objects.create(**asset_dict)
-                created.append(asset_dict['ip'])
-            except IntegrityError as e:
-                asset = Asset.objects.filter(ip=asset_dict['ip'], port=asset_dict['port'])
-                if not asset:
-                    failed.append(asset_dict['ip'])
+        created, updated, failed = [], [], []
+        assets = []
+        for row in csv_data[1:]:
+            if set(row) == {''}:
+                continue
+            asset_dict = dict(zip(attr, row))
+            id_ = asset_dict.pop('id', 0)
+            asset = get_object_or_none(Asset, id=id_)
+            for k, v in asset_dict.items():
+                if k == 'idc':
+                    v = get_object_or_none(IDC, name=v)
+                elif k == 'is_active':
+                    v = bool(v)
+                elif k == 'admin_user':
+                    v = get_object_or_none(AdminUser, name=v)
+                elif k in ['port', 'cabinet_pos', 'cpu_count', 'cpu_cores']:
+                    try:
+                        v = int(v)
+                    except ValueError:
+                        v = 0
+                elif k == 'groups':
+                    groups_name = v.split(',')
+                    v = AssetGroup.objects.filter(name__in=groups_name)
+                else:
                     continue
-                asset.update(**asset_dict)
-                updated.append(asset_dict['ip'])
-            except TypeError as e:
-                print(e)
-                failed.append(asset_dict['ip'])
+                asset_dict[k] = v
+
+            if not asset:
+                try:
+                    groups = asset_dict.pop('groups')
+                    asset = Asset.objects.create(**asset_dict)
+                    asset.groups.set(groups)
+                    created.append(asset_dict['hostname'])
+                    assets.append(asset)
+                except IndexError as e:
+                    failed.append('%s: %s' % (asset_dict['hostname'], str(e)))
+            else:
+                for k, v in asset_dict.items():
+                    if k == 'groups':
+                        asset.groups.set(v)
+                        continue
+                    if v:
+                        setattr(asset, k, v)
+                try:
+                    asset.save()
+                    updated.append(asset_dict['hostname'])
+                except Exception as e:
+                    failed.append('%s: %s' % (asset_dict['hostname'], str(e)))
+
+        if assets:
+            update_assets_hardware_info.delay(assets)
 
         data = {
             'created': created,
@@ -324,7 +325,8 @@ class BulkImportAssetView(AdminUserRequiredMixin, JSONResponseMixin, FormView):
             'failed': failed,
             'failed_info': 'Failed {}'.format(len(failed)),
             'valid': True,
-            'msg': 'Created: {}. Updated: {}, Error: {}'.format(len(created), len(updated), len(failed))
+            'msg': 'Created: {}. Updated: {}, Error: {}'.format(
+                len(created), len(updated), len(failed))
         }
         return self.render_json_response(data)
 

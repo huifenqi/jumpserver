@@ -81,13 +81,13 @@
                                             {% endif %}
                                         </tr>
                                         <tr>
-                                            <td>{% trans 'Assets ' %}:</td>
+                                            <td>{% trans 'assets' %}:</td>
                                             <td>
-                                            <b>
-                                            {% for asset in object.total_assets %}
-                                            {{ asset }} <br/>
-                                            {% endfor %}
-                                            </b>
+                                                <b>
+                                                {% for asset in object.total_assets %}
+                                                {{ asset.hostname }} <br/>
+                                                {% endfor %}
+                                                </b>
                                             </td>
                                         </tr>
                                         </tbody>

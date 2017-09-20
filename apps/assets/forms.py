@@ -10,31 +10,36 @@ logger = get_logger(__file__)
 
 
 class AssetCreateForm(forms.ModelForm):
+    class Meta:
+        model = Asset
+        fields = [
+            'hostname', 'ip', 'public_ip', 'port', 'type', 'comment',
+            'admin_user', 'idc', 'groups', 'status', 'env', 'is_active'
+        ]
+        widgets = {
+            'groups': forms.SelectMultiple(
+                attrs={'class': 'select2',
+                       'data-placeholder': _('Select asset groups')}),
+            'admin_user': forms.Select(
+                attrs={'class': 'select2',
+                       'data-placeholder': _('Select asset admin user')}),
+        }
+        help_texts = {
+            'hostname': '* required',
+            'ip': '* required',
+            'system_users': _('System user will be granted for user to login '
+                              'assets (using ansible create automatic)'),
+            'admin_user': _('Admin user should be exist on asset already, '
+                            'And have sudo ALL permission'),
+        }
+
     def clean_admin_user(self):
         if not self.cleaned_data['admin_user']:
             raise forms.ValidationError(_('Select admin user'))
         return self.cleaned_data['admin_user']
 
-    class Meta:
-        model = Asset
-        fields = [
-            'hostname', 'ip', 'public_ip', 'port', 'type', 'comment', 'admin_user',
-            'idc', 'groups', 'status', 'env', 'is_active'
-        ]
-        widgets = {
-            'groups': forms.SelectMultiple(attrs={'class': 'select2',
-                                                  'data-placeholder': _('Select asset groups')}),
-            'admin_user': forms.Select(attrs={'class': 'select2', 'data-placeholder': _('Select asset admin user')}),
-        }
-        help_texts = {
-            'hostname': '* required',
-            'ip': '* required',
-            'system_users': _('System user will be granted for user to login assets (using ansible create automatic)'),
-            'admin_user': _('Admin user should be exist on asset already, And have sudo ALL permission'),
-        }
 
-
-class AssetUpdateForm(AssetCreateForm):
+class AssetUpdateForm(forms.ModelForm):
     class Meta:
         model = Asset
         fields = [
@@ -43,16 +48,64 @@ class AssetUpdateForm(AssetCreateForm):
             'cabinet_pos', 'number', 'comment'
         ]
         widgets = {
-            'groups': forms.SelectMultiple(attrs={'class': 'select2',
-                                                  'data-placeholder': _('Select asset groups')}),
-            'admin_user': forms.Select(attrs={'class': 'select2', 'data-placeholder': _('Select asset admin user')}),
+            'groups': forms.SelectMultiple(
+                attrs={'class': 'select2',
+                       'data-placeholder': _('Select asset groups')}),
+            'admin_user': forms.Select(
+                attrs={'class': 'select2',
+                       'data-placeholder': _('Select asset admin user')}),
         }
         help_texts = {
             'hostname': '* required',
             'ip': '* required',
-            'system_users': _('System user will be granted for user to login assets (using ansible create automatic)'),
-            'admin_user': _('Admin user should be exist on asset already, And have sudo ALL permission'),
+            'system_users': _('System user will be granted for user '
+                              'to login assets (using ansible create automatic)'),
+            'admin_user': _('Admin user should be exist on asset '
+                            'already, And have sudo ALL permission'),
         }
+
+
+class AssetBulkUpdateForm(forms.ModelForm):
+    assets = forms.MultipleChoiceField(
+        required=True,
+        help_text='* required',
+        label=_('Select assets'),
+        # choices=[(asset.id, asset.hostname) for asset in Asset.objects.all()],
+        widget=forms.SelectMultiple(
+            attrs={
+                'class': 'select2',
+                'data-placeholder': _('Select assets')
+            }
+        )
+    )
+    port = forms.IntegerField(min_value=1, max_value=65535,
+                              required=False, label=_('Port'))
+
+    class Meta:
+        model = Asset
+        fields = [
+            'assets', 'port', 'groups', 'admin_user', 'idc',
+            'type', 'env', 'status',
+        ]
+        widgets = {
+            'groups': forms.SelectMultiple(
+                attrs={'class': 'select2',
+                       'data-placeholder': _('Select asset groups')}),
+            'admin_user': forms.Select(
+                attrs={'class': 'select2',
+                       'data-placeholder': _('Select asset admin user')}),
+        }
+
+    def save(self, commit=True):
+        cleaned_data = {k: v for k, v in self.cleaned_data.items() if v is not None}
+        assets_id = cleaned_data.pop('assets')
+        groups = cleaned_data.pop('groups')
+        assets = Asset.objects.filter(id__in=assets_id)
+        assets.update(**cleaned_data)
+        if groups:
+            for asset in assets:
+                asset.groups.set(groups)
+        return assets
 
 
 class AssetGroupForm(forms.ModelForm):
@@ -80,13 +133,8 @@ class AssetGroupForm(forms.ModelForm):
     class Meta:
         model = AssetGroup
         fields = [
-            "name", "comment", "system_users",
+            "name", "comment",
         ]
-        widgets = {
-            'name': forms.TextInput(attrs={}),
-            'system_users': forms.SelectMultiple(attrs={'class': 'select2-system-user', 'data-placeholder': _('Select asset system user')}),
-
-        }
         help_texts = {
             'name': '* required',
         }
@@ -94,12 +142,13 @@ class AssetGroupForm(forms.ModelForm):
 
 class IDCForm(forms.ModelForm):
     # See AdminUserForm comment same it
-    assets = forms.ModelMultipleChoiceField(queryset=Asset.objects.all(),
-                                            label=_('Asset'),
-                                            required=False,
-                                            widget=forms.SelectMultiple(
-                                                attrs={'class': 'select2', 'data-placeholder': _('Select assets')})
-                                            )
+    assets = forms.ModelMultipleChoiceField(
+        queryset=Asset.objects.all(),
+        label=_('Asset'),
+        required=False,
+        widget=forms.SelectMultiple(
+            attrs={'class': 'select2', 'data-placeholder': _('Select assets')})
+        )
 
     def __init__(self, *args, **kwargs):
         if kwargs.get('instance'):
@@ -249,7 +298,7 @@ class SystemUserForm(forms.ModelForm):
                 key_string = self.cleaned_data['private_key_file'].read()
                 self.cleaned_data['private_key_file'].seek(0)
                 if not validate_ssh_private_key(key_string):
-                    raise forms.ValidationError(_('Private key invalid'))
+                    raise forms.ValidationError(_('Invalid private key'))
         return self.cleaned_data['private_key_file']
 
     def clean_password(self):

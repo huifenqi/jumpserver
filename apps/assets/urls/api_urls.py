@@ -16,7 +16,6 @@ router.register(r'v1/system-user', api.SystemUserViewSet, 'system-user')
 
 urlpatterns = [
     url(r'^v1/assets_bulk/$', api.AssetListUpdateApi.as_view(), name='asset-bulk-update'),
-    # url(r'^v1/idc/(?P<pk>[0-9]+)/assets/$', api.IDCAssetsApi.as_view(), name='api-idc-assets'),
     url(r'^v1/system-user/(?P<pk>[0-9]+)/auth-info/', api.SystemUserAuthInfoApi.as_view(),
         name='system-user-auth-info'),
     url(r'^v1/assets/(?P<pk>\d+)/groups/$',
@@ -24,9 +23,14 @@ urlpatterns = [
 
     url(r'^v1/assets/(?P<pk>\d+)/refresh/$',
         api.AssetRefreshHardwareView.as_view(), name='asset-refresh'),
+    url(r'^v1/assets/(?P<pk>\d+)/admin-user-test/$',
+        api.AssetAdminUserTestView.as_view(), name='asset-admin-user-test'),
 
     url(r'^v1/assets/(?P<pk>\d+)/system-users/$',
         api.SystemUserUpdateApi.as_view(), name='asset-update-system-users'),
+
+    url(r'^v1/asset-groups/(?P<pk>\d+)/push-system-user/$',
+        api.AssetGroupPushSystemUserView.as_view(), name='asset-group-push-system-user'),
 
     # update the system users, which add and delete the asset to the system user
     url(r'^v1/system_user/(?P<pk>\d+)/assets/$',
